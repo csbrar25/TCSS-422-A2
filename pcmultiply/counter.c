@@ -24,6 +24,12 @@ void increment_cnt(counter_t *c)  {
   pthread_mutex_unlock(&c->lock);
 }
 
+void decrement_cnt(counter_t *c) {
+    pthread_mutex_lock(&c->lock);
+    c->value--;
+    pthread_mutex_unlock(&c->lock);
+}
+
 int get_cnt(counter_t *c)  {
   pthread_mutex_lock(&c->lock);
   int rc = c->value;

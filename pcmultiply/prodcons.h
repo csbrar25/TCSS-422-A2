@@ -6,7 +6,7 @@
  *  TCSS 422 - Operating Systems
  */
 
-Matrix ** bigmatrix;
+//Matrix ** bigmatrix;
 
 // PRODUCER-CONSUMER put() get() function prototypes
 
