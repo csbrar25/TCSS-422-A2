@@ -27,6 +27,7 @@ counter_t buffer_count;
 
 // Global Synchronizzation vaiables
 pthread_mutex_t buffer_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t print_mutex = PTHREAD_MUTEX_INITIALIZER; 
 pthread_cond_t buffer_not_full = PTHREAD_COND_INITIALIZER;
 pthread_cond_t buffer_not_empty = PTHREAD_COND_INITIALIZER;
 
@@ -82,6 +83,10 @@ void *prod_worker(void *arg)
     (*produced_count)++;  //Track produced matrices
   }
 
+  for (int i = 0; i < NUMWORK; i++) {
+        put(NULL);  // Insert NULL into the buffer as a termination signal
+  }
+
   pthread_exit((void *)produced_count); //Return the count
 }
 
@@ -107,11 +112,16 @@ void *cons_worker(void *arg)
     if (m2 == NULL) continue; //If no vaild second matirx found, continue
 
     Matrix *result = MatrixMultiply(m1, m2);
+
+    pthread_mutex_lock(&print_mutex);
+    printf("\nMULTIPLY (%d x %d) BY (%d x %d):\n", m1->rows, m1->cols, m2->rows, m2->cols);
+
     if(result != NULL) {  //if result is not  empty print the result matrix
       printf("Matrix Multiplication Result:\n");
       DisplayMatrix(result,stdout);
       FreeMatrix(result);
     }
+    pthread_mutex_unlock(&print_mutex);
 
     FreeMatrix(m1);
     FreeMatrix(m2);
