@@ -20,113 +20,153 @@
 
 
 // Define Locks, Condition variables, and so on here
-extern Matrix **bigmatrix;
-int buffer_head = 0;  //Points to next available slot for a consumer
-int buffer_tail= 0; // Points to the next available slot for producer
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t prod_cond = PTHREAD_COND_INITIALIZER;
+pthread_cond_t cons_cond = PTHREAD_COND_INITIALIZER;
+counters_t counters_strut;
 counter_t buffer_count;
-
-// Global Synchronizzation vaiables
-pthread_mutex_t buffer_mutex = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t print_mutex = PTHREAD_MUTEX_INITIALIZER; 
-pthread_cond_t buffer_not_full = PTHREAD_COND_INITIALIZER;
-pthread_cond_t buffer_not_empty = PTHREAD_COND_INITIALIZER;
-
+counter_t prod_count, cons_count;
 
 // Bounded buffer put() get()
 int put(Matrix * value)
 {
-  pthread_mutex_lock(&buffer_mutex);  //Locks the buffer
-
-  //Wait if buffer is full
-  while(get_cnt(&buffer_count) == BOUNDED_BUFFER_SIZE) {
-    pthread_cond_wait(&buffer_not_full, &buffer_mutex);
-  }
-
-  bigmatrix[buffer_tail] = value; //Add matrix at buffer tail and move buffer tail forward.
-  buffer_tail = (buffer_tail + 1)% BOUNDED_BUFFER_SIZE; //Wrap around if buffer tail reaches end.
-  increment_cnt(&buffer_count); //Increment buffer count
-
-  pthread_cond_signal(&buffer_not_empty); //Signals consumers that a new item is available
-  pthread_mutex_unlock(&buffer_mutex);  //Unlocks the buffer
-
-  return 0;
+	bigmatrix[BOUNDED_BUFFER_SIZE - get_cnt(counters_strut.prod) + get_cnt(counters_strut.cons) - 1] = value;
+	increment_cnt(counters_strut.prod);
+	return 0;
 }
 
 Matrix * get()
 {
-  pthread_mutex_lock(&buffer_mutex);  //Locks the buffer
-
-  //Wait if buffer is empty
-  while(get_cnt(&buffer_count) == 0) {
-    pthread_cond_wait(&buffer_not_empty, &buffer_mutex);
-  }
-  
-  Matrix *mat = bigmatrix[buffer_head]; //Get matrix from buffer at buffer head
-  buffer_head = (buffer_head + 1) % BOUNDED_BUFFER_SIZE;  //Wrap around if buffer head reaches the end
-  decrement_cnt(&buffer_count); //Decrement buffer count
-
-  pthread_cond_signal(&buffer_not_full);  // Signal producers the space is now available.
-  pthread_mutex_unlock(&buffer_mutex);  //Unlock the buffer
-
-  return mat; //returns the retrieved matrix. 
+	increment_cnt(counters_strut.cons);
+	return bigmatrix[BOUNDED_BUFFER_SIZE - get_cnt(counters_strut.prod) + get_cnt(counters_strut.cons) - 1];
 }
 
 // Matrix PRODUCER worker thread
 void *prod_worker(void *arg)
 {
-  int *produced_count = malloc (sizeof(int)); //Track the number of matrices produced
-  *produced_count = 0;
+	ProdConsStats *prod_stats = (ProdConsStats *) arg;
+	prod_stats->sumtotal = 0;
+	prod_stats->matrixtotal = 0;
 
-  for (int i = 0; i < NUMBER_OF_MATRICES; i++) {
-    Matrix *m = GenMatrixRandom();  //Generate a random matrix
-    put(m); //place the matrix in the buffer
-    (*produced_count)++;  //Track produced matrices
-  }
+	pthread_mutex_lock(&mutex);
+	if (get_cnt(&buffer_count) == 0 || !get_cnt(&buffer_count)) {
+		init_cnt(&buffer_count);
+		increment_cnt(&buffer_count);
+		counters_strut.prod = &prod_count;
+		counters_strut.cons = &cons_count;
+		init_cnt(counters_strut.prod);
+		init_cnt(counters_strut.cons);
+	}
+	pthread_mutex_unlock(&mutex);
 
-  for (int i = 0; i < NUMWORK; i++) {
-        put(NULL);  // Insert NULL into the buffer as a termination signal
-  }
-
-  pthread_exit((void *)produced_count); //Return the count
+	while (get_cnt(counters_strut.prod) < NUMBER_OF_MATRICES) {
+		pthread_mutex_lock(&mutex);
+		Matrix *m1;
+		while ((get_cnt(counters_strut.prod) - get_cnt(counters_strut.cons)) >= BOUNDED_BUFFER_SIZE && get_cnt(counters_strut.prod) < NUMBER_OF_MATRICES) {
+			pthread_cond_wait(&prod_cond, &mutex);
+		}
+		if (get_cnt(counters_strut.prod) < NUMBER_OF_MATRICES) {
+			m1 = GenMatrixRandom();
+			put(m1);
+			prod_stats->sumtotal += SumMatrix(m1);
+			prod_stats->matrixtotal++;
+			pthread_cond_signal(&cons_cond);
+		}
+		pthread_mutex_unlock(&mutex);
+	}
+	pthread_cond_broadcast(&prod_cond);
+	pthread_cond_broadcast(&cons_cond);
+	pthread_exit(&prod_stats);
 }
 
 // Matrix CONSUMER worker thread
 void *cons_worker(void *arg)
 {
-  int *consumed_count = malloc(sizeof(int));
-  *consumed_count  = 0;
+	ProdConsStats *cons_stats = (ProdConsStats *) arg;
+	cons_stats->matrixtotal = 0;
+	cons_stats->sumtotal = 0;
+	cons_stats->multtotal = 0;
 
-  while(1) {
-    Matrix *m1 = get(); //get first matrix from buffer
-    if(m1 == NULL)  break;
+	pthread_mutex_lock(&mutex);
+	if (get_cnt(&buffer_count) == 0 || !get_cnt(&buffer_count)) {
+		init_cnt(&buffer_count);
+		increment_cnt(&buffer_count);
+		counters_strut.prod = &prod_count;
+		counters_strut.cons = &cons_count;
+		init_cnt(counters_strut.prod);
+		init_cnt(counters_strut.cons);
+	}
+	pthread_mutex_unlock(&mutex);
 
-    Matrix *m2;
-    do {
-      m2 = get(); //get second matrix
-      if(m2 == NULL) {
-        FreeMatrix(m1);
-        break;
-      }
-    } while (m1 -> cols != m2-> rows);  //Repeat untill a valid pair is found
+	while (get_cnt(counters_strut.cons) < NUMBER_OF_MATRICES) {
+		Matrix *m1, *m2, *m3;
+		pthread_mutex_lock(&mutex);
+		while ( (get_cnt(counters_strut.prod) - get_cnt(counters_strut.cons)) <= 0  && get_cnt(counters_strut.cons) < NUMBER_OF_MATRICES) {
+			pthread_cond_wait(&cons_cond, &mutex);
+		}
 
-    if (m2 == NULL) continue; //If no vaild second matirx found, continue
+		if (get_cnt(counters_strut.cons) < NUMBER_OF_MATRICES) {
+			m1 = get();
+			cons_stats->sumtotal += SumMatrix(m1);
+			cons_stats->matrixtotal++;
+			bigmatrix[BOUNDED_BUFFER_SIZE - get_cnt(counters_strut.prod) + get_cnt(counters_strut.cons) - 1] = NULL;
+			pthread_cond_signal(&prod_cond);
+		}
 
-    Matrix *result = MatrixMultiply(m1, m2);
+		if (get_cnt(counters_strut.cons) >= NUMBER_OF_MATRICES) {
+			pthread_mutex_unlock(&mutex);
+			break;
+		}
 
-    pthread_mutex_lock(&print_mutex);
-    printf("\nMULTIPLY (%d x %d) BY (%d x %d):\n", m1->rows, m1->cols, m2->rows, m2->cols);
+		while ( (get_cnt(counters_strut.prod) - get_cnt(counters_strut.cons)) <= 0  && get_cnt(counters_strut.cons) < NUMBER_OF_MATRICES) {
+			pthread_cond_wait(&cons_cond, &mutex);
+		}
 
-    if(result != NULL) {  //if result is not  empty print the result matrix
-      printf("Matrix Multiplication Result:\n");
-      DisplayMatrix(result,stdout);
-      FreeMatrix(result);
-    }
-    pthread_mutex_unlock(&print_mutex);
+		if (get_cnt(counters_strut.cons) < NUMBER_OF_MATRICES) {
+			m2 = get();
+			cons_stats->sumtotal += SumMatrix(m2);
+			cons_stats->matrixtotal++;
+			bigmatrix[BOUNDED_BUFFER_SIZE - get_cnt(counters_strut.prod) + get_cnt(counters_strut.cons) - 1] = NULL;
+			pthread_cond_signal(&prod_cond);
+		}
+		pthread_mutex_unlock(&mutex);
 
-    FreeMatrix(m1);
-    FreeMatrix(m2);
-    (*consumed_count)++;
-  }
+		if (m1 != NULL && m2 != NULL) m3 = MatrixMultiply(m1, m2);
 
-  pthread_exit((void *)consumed_count); //return the count
+		while (m3 == NULL && get_cnt(counters_strut.cons) < NUMBER_OF_MATRICES) {
+			pthread_mutex_lock(&mutex);
+			while ( (get_cnt(counters_strut.prod) - get_cnt(counters_strut.cons)) <= 0 && get_cnt(counters_strut.cons) < NUMBER_OF_MATRICES) {
+				pthread_cond_wait(&cons_cond, &mutex);
+			}
+			if (get_cnt(counters_strut.cons) < NUMBER_OF_MATRICES) {
+				m2 = get();
+				cons_stats->sumtotal += SumMatrix(m2);
+				cons_stats->matrixtotal++;
+				bigmatrix[BOUNDED_BUFFER_SIZE - get_cnt(counters_strut.prod) + get_cnt(counters_strut.cons) - 1] = NULL;
+				pthread_cond_signal(&prod_cond);
+			}
+			m3 = MatrixMultiply(m1, m2);
+			pthread_mutex_unlock(&mutex);
+		}
+
+
+		if (m3 != NULL) {
+			pthread_mutex_lock(&mutex);
+			DisplayMatrix(m1,stdout);
+			printf("    X\n");
+			DisplayMatrix(m2,stdout);
+			printf("    =\n");
+			DisplayMatrix(m3,stdout);
+			printf("\n");
+			cons_stats->multtotal++;
+			FreeMatrix(m3);
+			pthread_mutex_unlock(&mutex);
+		}
+
+
+	}
+
+	pthread_cond_broadcast(&prod_cond);
+	pthread_cond_broadcast(&cons_cond);
+	pthread_exit(&cons_stats);
 }

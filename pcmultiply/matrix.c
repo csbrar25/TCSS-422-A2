@@ -19,7 +19,6 @@
 #include "pcmatrix.h"
 
 
-
 // MATRIX ROUTINES
 Matrix * AllocMatrix(int r, int c)
 {
@@ -112,7 +111,7 @@ Matrix * MatrixMultiply(Matrix * m1, Matrix * m2)
   {
     return NULL;
   }
-  //printf("MULTIPLY (%d x %d) BY (%d x %d):\n",m1->rows,m1->cols,m2->rows,m2->cols);
+  printf("MULTIPLY (%d x %d) BY (%d x %d):\n",m1->rows,m1->cols,m2->rows,m2->cols);
   Matrix * newmat = AllocMatrix(m1->rows, m2->cols);
   int ** nm = newmat->m;
   int ** ma1 = m1->m;
