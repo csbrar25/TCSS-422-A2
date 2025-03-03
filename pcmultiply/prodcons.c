@@ -191,8 +191,25 @@ void *cons_worker(void *arg)
 		}
 		pthread_mutex_unlock(&mutex);
 
+		pthread_mutex_lock(&mutex);
 		// Multiplies matrices, if m1 and m2 are not NULL
-		if (m1 && m2) m3 = MatrixMultiply(m1, m2);
+		if (m1 && m2) { 
+			m3 = MatrixMultiply(m1, m2);
+			// If MatrixMultiplcation was successful, print m1, m2, and resulting m3 matrices
+			if (m3 != NULL) {
+				DisplayMatrix(m1,stdout);
+				printf("    X\n");
+				DisplayMatrix(m2,stdout);
+				printf("    =\n");
+				DisplayMatrix(m3,stdout);
+				printf("\n");
+				// Increments total matrices multiplied from consumer stats
+				cons_stats->multtotal++;
+				// Free multiplied matrix
+				FreeMatrix(m3);
+			}
+		}
+		pthread_mutex_unlock(&mutex);
 
 		// Loops until MatrixMultiply is successful, or runs out of matrices
 		while (!m3 && get_cnt(counters_strut.cons) < NUMBER_OF_MATRICES) {
@@ -224,24 +241,23 @@ void *cons_worker(void *arg)
 			if (m2) {
 				m3 = MatrixMultiply(m1, m2);
 			}
+			// If MatrixMultiplcation was successful, print m1, m2, and resulting m3 matrices
+			if (m3 != NULL) {
+				DisplayMatrix(m1,stdout);
+				printf("    X\n");
+				DisplayMatrix(m2,stdout);
+				printf("    =\n");
+				DisplayMatrix(m3,stdout);
+				printf("\n");
+				// Increments total matrices multiplied from consumer stats
+				cons_stats->multtotal++;
+				// Free multiplied matrix
+				FreeMatrix(m3);
+			}
 			pthread_mutex_unlock(&mutex);
 		}
 
-		// If MatrixMultiplcation was successful, print m1, m2, and resulting m3 matrices
-		if (m3 != NULL) {
-			pthread_mutex_lock(&mutex);
-			DisplayMatrix(m1,stdout);
-			printf("    X\n");
-			DisplayMatrix(m2,stdout);
-			printf("    =\n");
-			DisplayMatrix(m3,stdout);
-			printf("\n");
-			// Increments total matrices multiplied from consumer stats
-			cons_stats->multtotal++;
-			// Free multiplied matrix
-			FreeMatrix(m3);
-			pthread_mutex_unlock(&mutex);
-		}
+		
 
 		// Free m1 and m2 matrices
 		if (m1) FreeMatrix(m1);
