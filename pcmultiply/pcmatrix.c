@@ -1,3 +1,7 @@
+/******************************************************************************
+  @file         pcmatrix.c
+  @author       Jovany Cardoza-Aguilar, Charankamal Brar
+*******************************************************************************/
 /*
  *  pcmatrix module
  *  Primary module providing control flow for the pcMatrix program
@@ -87,56 +91,26 @@ int main (int argc, char * argv[])
   // Seed the random number generator with the system time
   srand((unsigned) time(&t));
 
-  //
-  // Demonstration code to show the use of matrix routines
-  //
-  // DELETE THIS CODE FOR YOUR SUBMISSION
-  // ----------------------------------------------------------
-  /*
-  bigmatrix = (Matrix **) malloc(sizeof(Matrix *) * BOUNDED_BUFFER_SIZE);
-  printf("MATRIX MULTIPLICATION DEMO:\n\n");
-  Matrix *m1, *m2, *m3;
-  for (int i=0;i<NUMBER_OF_MATRICES;i++)
-  {
-    m1 = GenMatrixRandom();
-    m2 = GenMatrixRandom();
-    m3 = MatrixMultiply(m1, m2);
-    if (m3 != NULL)
-    {
-      DisplayMatrix(m1,stdout);
-      printf("    X\n");
-      DisplayMatrix(m2,stdout);
-      printf("    =\n");
-      DisplayMatrix(m3,stdout);
-      printf("\n");
-      FreeMatrix(m3);
-      FreeMatrix(m2);
-      FreeMatrix(m1);
-      m1=NULL;
-      m2=NULL;
-      m3=NULL;
-    }
-  }
-  return 0;
-  */
-  // ----------------------------------------------------------
-
-
-
+  // Prints arguments used by program
   printf("Producing %d matrices in mode %d.\n",NUMBER_OF_MATRICES,MATRIX_MODE);
   printf("Using a shared buffer of size=%d\n", BOUNDED_BUFFER_SIZE);
   printf("With %d producer and consumer thread(s).\n",numw);
   printf("\n");
 
   // Here is an example to define one producer and one consumer
+  // [numw] creates an array of producer and consumers based on arguments
   pthread_t pr[numw];
   pthread_t co[numw];
 
   // Add your code here to create threads and so on
+  // Bounded Buffer that stores matricies
   bigmatrix = (Matrix **) malloc(sizeof(Matrix *) * BOUNDED_BUFFER_SIZE);
+
+  // ProdConsStats struct that tracks stats of threads
   ProdConsStats prod_stats[numw];
   ProdConsStats cons_stats[numw];
 
+  // Creates threads based on numw, from array of pthreads producers and consumers
   for (int i = 0; i < numw; i++) {
 	  pthread_create(&pr[i], NULL, prod_worker, &prod_stats[i]); 
 	  pthread_create(&co[i], NULL, cons_worker, &cons_stats[i]); 
@@ -152,18 +126,24 @@ int main (int argc, char * argv[])
   // consume ProdConsStats from producer and consumer threads [HINT: return from join]
   // add up total matrix stats in prs, cos, prodtot, constot, consmul
   for (int i = 0; i < numw; i++) {
+	  // Wait for threads to finish
 	  pthread_join(pr[i], NULL);
 	  pthread_join(co[i], NULL);
+	  // Sum of matricies
 	  prs += prod_stats[i].sumtotal;
 	  cos += cons_stats[i].sumtotal;
+	  // Number of matricies
 	  prodtot += prod_stats[i].matrixtotal;
 	  constot += cons_stats[i].matrixtotal;
+	  // Number of multiplications
 	  consmul += cons_stats[i].multtotal;
   }
 
+  // Prints matrix/thread stats
   printf("Sum of Matrix elements --> Produced=%d = Consumed=%d\n",prs,cos);
   printf("Matrices produced=%d consumed=%d multiplied=%d\n",prodtot,constot,consmul);
 
+  // Frees bigmatrix bounded buffer
   free(bigmatrix);
 
   return 0;
